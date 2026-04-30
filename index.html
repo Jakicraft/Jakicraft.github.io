@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GM Dice Countdown</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:        #0c0b0f;
+      --surface:   #13111a;
+      --border:    #2a2535;
+      --gold:      #c9952a;
+      --gold-dim:  #7a5a14;
+      --gold-glow: #e8b84b;
+      --amber:     #f0c060;
+      --red:       #a03030;
+      --red-glow:  #e04040;
+      --green:     #2a7a4a;
+      --green-glow:#40e080;
+      --text:      #e8d8b0;
+      --muted:     #7a6f5a;
+      --die-fill:  #1a1525;
+      --die-stroke:#4a3a6a;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Crimson Text', Georgia, serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background:
+        radial-gradient(ellipse 60% 40% at 50% 0%, #2a1a4a22 0%, transparent 70%),
+        radial-gradient(ellipse 40% 60% at 100% 100%, #3a1a0a11 0%, transparent 60%),
+        radial-gradient(ellipse 50% 50% at 0% 100%, #0a1a3a11 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      opacity: 0.5;
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 22px;
+      padding: 28px 24px 36px;
+      max-width: 520px;
+      width: 100%;
+    }
+
+    header { text-align: center; }
+    header h1 {
+      font-family: 'Cinzel Decorative', serif;
+      font-size: clamp(1.1rem, 4vw, 1.5rem);
+      color: var(--gold-glow);
+      letter-spacing: 0.12em;
+      text-shadow: 0 0 18px #c9952a88, 0 0 40px #c9952a33;
+    }
+    header p {
+      font-size: 0.9rem;
+      color: var(--muted);
+      font-style: italic;
+      margin-top: 4px;
+      letter-spacing: 0.04em;
+    }
+
+    .dice-selector {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+    }
+    .die-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-family: 'Cinzel', serif;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      padding: 7px 14px;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.18s ease;
+    }
+    .die-btn:hover { border-color: var(--gold-dim); color: var(--gold-glow); }
+    .die-btn.active {
+      background: #1e1828;
+      border-color: var(--gold);
+      color: var(--amber);
+      box-shadow: 0 0 12px #c9952a44, inset 0 0 8px #c9952a18;
+    }
+
+    .die-stage {
+      position: relative;
+      width: 240px;
+      height: 240px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #die-svg {
+      width: 100%;
+      height: 100%;
+      filter: drop-shadow(0 0 18px #7a5a1466) drop-shadow(0 0 40px #c9952a22);
+      transition: filter 0.3s;
+    }
+    #die-svg.flash       { filter: drop-shadow(0 0 28px #c9952aaa) drop-shadow(0 0 60px #c9952a55); }
+    #die-svg.flash-red   { filter: drop-shadow(0 0 28px #e04040aa) drop-shadow(0 0 60px #a0303055); }
+    #die-svg.flash-green { filter: drop-shadow(0 0 32px #40e080bb) drop-shadow(0 0 70px #40e08055); }
+
+    #die-value {
+      font-family: 'Cinzel Decorative', serif;
+      font-size: 64px;
+      fill: var(--amber);
+      text-anchor: middle;
+      dominant-baseline: central;
+      transition: font-size 0.15s;
+      filter: drop-shadow(0 0 8px #c9952a88);
+    }
+
+    #die-goal-label {
+      font-family: 'Cinzel', serif;
+      font-size: 13px;
+      fill: #30a060;
+      text-anchor: middle;
+      letter-spacing: 2px;
+      transition: fill 0.3s;
+    }
+
+    /* ── PROGRESS TRACK ── */
+    .progress-wrap {
+      width: 240px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .progress-labels {
+      display: flex;
+      justify-content: space-between;
+      font-family: 'Cinzel', serif;
+      font-size: 0.7rem;
+      color: var(--muted);
+      letter-spacing: 0.07em;
+    }
+    .progress-labels .goal-label { color: var(--green-glow); }
+    .progress-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      overflow: visible;
+      position: relative;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--gold-dim), var(--gold-glow));
+      border-radius: 3px;
+      transition: width 0.25s ease, background 0.3s;
+      width: 0%;
+      position: relative;
+      z-index: 1;
+    }
+    .progress-bar-fill.at-goal {
+      background: linear-gradient(90deg, var(--green), var(--green-glow));
+    }
+    .goal-notch {
+      position: absolute;
+      top: -4px;
+      width: 3px;
+      height: 14px;
+      background: var(--green-glow);
+      border-radius: 1px;
+      box-shadow: 0 0 6px var(--green-glow);
+      transition: left 0.25s ease;
+      z-index: 2;
+    }
+
+    /* ── TRIGGERED BANNER ── */
+    .triggered-banner {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 10px 24px;
+      background: #0a1f12;
+      border: 1px solid var(--green-glow);
+      border-radius: 6px;
+      box-shadow: 0 0 20px #40e08044;
+      font-family: 'Cinzel', serif;
+      font-size: 0.9rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      color: var(--green-glow);
+      text-shadow: 0 0 12px #40e08088;
+      width: 100%;
+      max-width: 340px;
+    }
+    .triggered-banner.visible {
+      display: flex;
+      animation: pulse-green 1.8s ease-in-out infinite;
+    }
+    @keyframes pulse-green {
+      0%, 100% { box-shadow: 0 0 16px #40e08044; }
+      50%       { box-shadow: 0 0 32px #40e08099; }
+    }
+
+    /* ── CONTROLS ── */
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .ctrl-btn {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 2rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      user-select: none;
+    }
+    .ctrl-btn:hover { border-color: var(--gold); color: var(--amber); box-shadow: 0 0 14px #c9952a44; transform: scale(1.07); }
+    .ctrl-btn:active { transform: scale(0.95); }
+    .ctrl-btn.decrease:hover { border-color: var(--red-glow); color: var(--red-glow); box-shadow: 0 0 14px #e0404044; }
+    .ctrl-btn.increase:hover { border-color: var(--gold-glow); color: var(--gold-glow); box-shadow: 0 0 14px #e8b84b44; }
+
+    .value-badge {
+      font-family: 'Cinzel', serif;
+      font-size: 0.88rem;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      width: 90px;
+      text-align: center;
+      line-height: 1.5;
+      transition: color 0.3s;
+    }
+
+    .ornament {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      max-width: 380px;
+      color: var(--gold-dim);
+    }
+    .ornament::before, .ornament::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--gold-dim), transparent);
+    }
+
+    /* ── PANELS ── */
+    .panels {
+      display: flex;
+      gap: 12px;
+      width: 100%;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .set-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 16px;
+      flex: 1;
+      min-width: 190px;
+    }
+    .set-row.goal-row {
+      border-color: #1a3a2a;
+      background: #0d1510;
+    }
+    .set-row label {
+      font-family: 'Cinzel', serif;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .set-row.goal-row label { color: var(--green-glow); }
+    .set-row input[type="number"] {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--amber);
+      font-family: 'Cinzel', serif;
+      font-size: 1rem;
+      font-weight: 600;
+      padding: 5px 8px;
+      width: 60px;
+      text-align: center;
+      outline: none;
+      transition: border-color 0.18s;
+      -moz-appearance: textfield; 
+    }
+    .set-row input::-webkit-inner-spin-button,
+    .set-row input::-webkit-outer-spin-button { -webkit-appearance: none; }
+    .set-row input:focus { border-color: var(--gold); }
+    .set-row.goal-row input { color: var(--green-glow); }
+    .set-row.goal-row input:focus { border-color: var(--green-glow); }
+
+    .set-btn {
+      background: linear-gradient(135deg, #2a1e10, #1a140a);
+      border: 1px solid var(--gold-dim);
+      color: var(--amber);
+      font-family: 'Cinzel', serif;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      padding: 7px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.18s;
+      white-space: nowrap;
+    }
+    .set-btn:hover { border-color: var(--gold-glow); box-shadow: 0 0 12px #c9952a44; color: var(--gold-glow); }
+
+    .goal-btn {
+      background: linear-gradient(135deg, #0a2018, #060f0a);
+      border: 1px solid #1a4a2a;
+      color: var(--green-glow);
+      font-family: 'Cinzel', serif;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      padding: 7px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.18s;
+      white-space: nowrap;
+    }
+    .goal-btn:hover { border-color: var(--green-glow); box-shadow: 0 0 12px #40e08044; }
+
+    .hint { font-size: 0.72rem; color: #3a3040; letter-spacing: 0.06em; text-align: center; }
+
+    @keyframes bump {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.12); }
+      100% { transform: scale(1); }
+    }
+    .bump { animation: bump 0.2s ease; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>⚔ Dice Countdown ⚔</h1>
+    <p>Game Master's Tracker</p>
+  </header>
+
+  <div class="ornament"><span>✦</span></div>
+
+  <div class="dice-selector" id="diceSelector">
+    <button class="die-btn" data-sides="2">d2</button>
+    <button class="die-btn active" data-sides="4">d4</button>
+    <button class="die-btn" data-sides="6">d6</button>
+    <button class="die-btn" data-sides="8">d8</button>
+    <button class="die-btn" data-sides="10">d10</button>
+    <button class="die-btn" data-sides="12">d12</button>
+    <button class="die-btn" data-sides="20">d20</button>
+    <button class="die-btn" data-sides="100">d100</button>
+  </div>
+
+  <div class="die-stage">
+    <svg id="die-svg" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="inner-shadow" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur in="SourceAlpha" stdDeviation="6" result="blur"/>
+          <feOffset dx="0" dy="2" result="offsetBlur"/>
+          <feFlood flood-color="#000000" flood-opacity="0.6" result="color"/>
+          <feComposite in="color" in2="offsetBlur" operator="in" result="shadow"/>
+          <feMerge><feMergeNode in="shadow"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <g id="die-group" filter="url(#inner-shadow)"></g>
+      <text id="die-value" x="120" y="112">4</text>
+      <text id="die-goal-label" x="120" y="168">⚑ GOAL: 4</text>
+    </svg>
+  </div>
+
+  <!-- Progress bar -->
+  <div class="progress-wrap">
+    <div class="progress-labels">
+      <span>1</span>
+      <span id="prog-center" style="color:var(--amber)">— / —</span>
+      <span class="goal-label" id="prog-goal-label">⚑ —</span>
+    </div>
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" id="progressFill"></div>
+      <div class="goal-notch" id="goalNotch"></div>
+    </div>
+  </div>
+
+  <!-- Triggered banner -->
+  <div class="triggered-banner" id="triggeredBanner">✦ &nbsp; GOAL REACHED &nbsp; ✦</div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <button class="ctrl-btn decrease" id="btnDec" title="Decrease (←)">−</button>
+    <div class="value-badge" id="valueBadge">— / —</div>
+    <button class="ctrl-btn increase" id="btnInc" title="Increase (→)">+</button>
+  </div>
+
+  <div class="ornament"><span>✦</span></div>
+
+  <!-- Set value + goal panels -->
+  <div class="panels">
+    <div class="set-row">
+      <label>VALUE</label>
+      <input type="number" id="startInput" value="4" min="1" />
+      <button class="set-btn" id="setBtn">SET</button>
+    </div>
+    <div class="set-row goal-row">
+      <label>⚑ GOAL</label>
+      <input type="number" id="goalInput" value="4" min="1" />
+      <button class="goal-btn" id="setGoalBtn">SET</button>
+    </div>
+  </div>
+
+  <div class="hint" id="rangeInfo">Value & Goal: 1 – 5 &nbsp;|&nbsp; ← → arrow keys to adjust</div>
+
+</div>
+
+<script>
+  // ── Shape helpers ──
+  function regularPoly(cx, cy, r, n, startAngle = 0) {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const a = startAngle + (2 * Math.PI * i) / n;
+      pts.push(`${cx + r * Math.cos(a)},${cy + r * Math.sin(a)}`);
+    }
+    return pts.join(' ');
+  }
+  const mkTriangle = (cx, cy, r) => regularPoly(cx, cy - 4, r, 3, -Math.PI / 2);
+  const mkSquare   = (cx, cy, r) => regularPoly(cx, cy, r, 4, -Math.PI / 4);
+  const mkDiamond  = (cx, cy, rw, rh) => `${cx},${cy-rh} ${cx+rw},${cy} ${cx},${cy+rh} ${cx-rw},${cy}`;
+  const mkHexagon  = (cx, cy, r) => regularPoly(cx, cy, r, 6, 0);
+  function mkKite(cx, cy, r) {
+    return `${cx},${cy - r * 1.05} ${cx + r * 0.78},${cy + r * 0.25} ${cx},${cy + r * 0.7} ${cx - r * 0.78},${cy + r * 0.25}`;
+  }
+
+  const SHAPES = {
+    2:   { type: 'ellipse', rx: 85, ry: 85 },
+    4:   { type: 'polygon', pts: () => mkTriangle(120, 118, 95) },
+    6:   { type: 'polygon', pts: () => mkSquare(120, 120, 88) },
+    8:   { type: 'polygon', pts: () => mkDiamond(120, 120, 95, 95) },
+    10:  { type: 'polygon', pts: () => mkKite(120, 120, 90) },
+    12:  { type: 'polygon', pts: () => regularPoly(120, 120, 92, 5, -Math.PI/2) },
+    20:  { type: 'polygon', pts: () => mkHexagon(120, 120, 92) },
+    100: { type: 'ellipse', rx: 88, ry: 88 },
+  };
+
+  // ── State ──
+  let sides = 4;
+  let value = 4;
+  let goal  = 4;
+
+  const maxVal    = () => sides + 1;            // value and goal both go up to sides+1
+  const clampV    = v => Math.max(1, Math.min(maxVal(), v));
+  const clampG    = g => Math.max(1, Math.min(maxVal(), g));
+
+  // ── DOM refs ──
+  const dieSvg          = document.getElementById('die-svg');
+  const dieGroup        = document.getElementById('die-group');
+  const dieValueEl      = document.getElementById('die-value');
+  const dieGoalLabel    = document.getElementById('die-goal-label');
+  const valueBadge      = document.getElementById('valueBadge');
+  const progressFill    = document.getElementById('progressFill');
+  const goalNotch       = document.getElementById('goalNotch');
+  const triggeredBanner = document.getElementById('triggeredBanner');
+  const rangeInfo       = document.getElementById('rangeInfo');
+  const startInput      = document.getElementById('startInput');
+  const goalInput       = document.getElementById('goalInput');
+  const progCenter      = document.getElementById('prog-center');
+  const progGoalLabel   = document.getElementById('prog-goal-label');
+
+  // ── Draw die shape ──
+  function drawDie() {
+    dieGroup.innerHTML = '';
+    const def = SHAPES[sides];
+    let shape;
+
+    if (def.type === 'ellipse') {
+      shape = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+      shape.setAttribute('cx', 120); shape.setAttribute('cy', 120);
+      shape.setAttribute('rx', def.rx); shape.setAttribute('ry', def.ry);
+    } else {
+      shape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      shape.setAttribute('points', def.pts());
+    }
+    shape.setAttribute('fill', '#1a1525');
+    shape.setAttribute('stroke', '#4a3a6a');
+    shape.setAttribute('stroke-width', '2');
+    shape.setAttribute('stroke-linejoin', 'round');
+    dieGroup.appendChild(shape);
+
+    if (def.type !== 'ellipse') {
+      const arr = def.pts().split(' ');
+      if (arr.length >= 2) {
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        const p0 = arr[0].split(','), p1 = arr[1].split(',');
+        line.setAttribute('x1', p0[0]); line.setAttribute('y1', p0[1]);
+        line.setAttribute('x2', p1[0]); line.setAttribute('y2', p1[1]);
+        line.setAttribute('stroke', '#6a508a');
+        line.setAttribute('stroke-width', '1');
+        line.setAttribute('opacity', '0.5');
+        dieGroup.appendChild(line);
+      }
+    }
+  }
+
+  // ── Render all UI from state ──
+  function render() {
+    const max    = maxVal();
+    const atGoal = value === goal;
+
+    // die number text
+    dieValueEl.textContent = value;
+    const len = String(value).length;
+    dieValueEl.setAttribute('font-size', len >= 3 ? 34 : len === 2 ? 50 : 64);
+    dieValueEl.setAttribute('y', '112');
+
+    if (atGoal) {
+      dieValueEl.style.fill   = '#40e080';
+      dieValueEl.style.filter = 'drop-shadow(0 0 10px #40e08099)';
+    } else if (value === 1) {
+      dieValueEl.style.fill   = '#e06060';
+      dieValueEl.style.filter = 'drop-shadow(0 0 8px #e0404088)';
+    } else {
+      dieValueEl.style.fill   = '';
+      dieValueEl.style.filter = '';
+    }
+
+    // goal label inside die
+    dieGoalLabel.textContent = `⚑ GOAL: ${goal}`;
+    dieGoalLabel.style.fill  = atGoal ? '#40e080' : '#30a060';
+
+    // value badge
+    valueBadge.textContent   = `${value} / ${max}`;
+    valueBadge.style.color   = atGoal ? 'var(--green-glow)' : '';
+
+    // progress bar fill (value across 1..max)
+    const pct     = max > 1 ? ((value - 1) / (max - 1)) * 100 : 100;
+    const goalPct = max > 1 ? ((goal  - 1) / (max - 1)) * 100 : 100;
+    progressFill.style.width = `${pct}%`;
+    progressFill.classList.toggle('at-goal', atGoal);
+    goalNotch.style.left     = `calc(${goalPct}% - 1px)`;
+
+    // progress labels
+    progCenter.textContent    = `${value} / ${max}`;
+    progGoalLabel.textContent = `⚑ ${goal}`;
+
+    // triggered
+    triggeredBanner.classList.toggle('visible', atGoal);
+
+    // range hint
+    rangeInfo.textContent = `Value & Goal: 1 – ${max}  (d${sides} max ${sides}, goal up to ${sides}+1)  |  ← → to adjust`;
+  }
+
+  // ── Flash ──
+  function flashDie(type = 'gold') {
+    dieSvg.classList.remove('flash', 'flash-red', 'flash-green', 'bump');
+    void dieSvg.offsetWidth;
+    const cls = type === 'red' ? 'flash-red' : type === 'green' ? 'flash-green' : 'flash';
+    dieSvg.classList.add(cls, 'bump');
+    setTimeout(() => dieSvg.classList.remove('flash','flash-red','flash-green','bump'), 350);
+  }
+
+  // ── Actions ──
+  function decrease() {
+    if (value <= 1) { flashDie('red'); return; }
+    value--;
+    render();
+    flashDie(value === goal ? 'green' : 'gold');
+  }
+
+  function increase() {
+    if (value >= maxVal()) { flashDie('red'); return; }
+    value++;
+    render();
+    flashDie(value === goal ? 'green' : 'gold');
+  }
+
+  function applyValue() {
+    let v = parseInt(startInput.value);
+    if (isNaN(v)) v = 1;
+    value = clampV(v);
+    startInput.value = value;
+    render();
+    flashDie(value === goal ? 'green' : 'gold');
+  }
+
+  function applyGoal() {
+    let g = parseInt(goalInput.value);
+    if (isNaN(g)) g = sides;
+    goal = clampG(g);
+    goalInput.value = goal;
+    render();
+    flashDie(value === goal ? 'green' : 'gold');
+  }
+
+  function setDieType(s) {
+    sides = s;
+    value = clampV(value);
+    goal  = clampG(goal);
+    startInput.value = value;
+    goalInput.value  = goal;
+    document.querySelectorAll('.die-btn').forEach(b =>
+      b.classList.toggle('active', parseInt(b.dataset.sides) === s)
+    );
+    drawDie();
+    render();
+    flashDie('gold');
+  }
+
+  // ── Events ──
+  document.getElementById('diceSelector').addEventListener('click', e => {
+    const btn = e.target.closest('.die-btn');
+    if (btn) setDieType(parseInt(btn.dataset.sides));
+  });
+
+  document.getElementById('btnDec').addEventListener('click', decrease);
+  document.getElementById('btnInc').addEventListener('click', increase);
+  document.getElementById('setBtn').addEventListener('click', applyValue);
+  document.getElementById('setGoalBtn').addEventListener('click', applyGoal);
+
+  startInput.addEventListener('keydown', e => { if (e.key === 'Enter') applyValue(); });
+  goalInput.addEventListener('keydown',  e => { if (e.key === 'Enter') applyGoal(); });
+
+  document.addEventListener('keydown', e => {
+    if (e.target === startInput || e.target === goalInput) return;
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowDown') decrease();
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp')   increase();
+  });
+
+  // ── Init ──
+  drawDie();
+  render();
+</script>
+</body>
+</html>
