@@ -27,7 +27,45 @@
   // Initialize Realtime Database and get a reference to the service
   const database = getDatabase(app);
 
-  
+  // ── FIREBASE SYNC SETUP ──
+  // Generate or retrieve a game session ID
+  const getSessionId = () => {
+    let sessionId = sessionStorage.getItem('diceCountdownSessionId');
+    if (!sessionId) {
+      sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      sessionStorage.setItem('diceCountdownSessionId', sessionId);
+    }
+    return sessionId;
+  };
+
+  const SESSION_ID = getSessionId();
+  const gameRef = ref(database, `games/${SESSION_ID}`);
+  let isSyncingFromDatabase = false; // Flag to prevent feedback loops
+
+  // Save state to Firebase
+  window.saveToFirebase = async (sides, value, goal) => {
+    try {
+      await set(gameRef, { sides, value, goal, timestamp: Date.now() });
+    } catch (error) {
+      console.error('Error saving to Firebase:', error);
+    }
+  };
+
+  // Listen for changes from other tabs/devices
+  onValue(gameRef, (snapshot) => {
+    if (snapshot.exists()) {
+      const data = snapshot.val();
+      // Only update if the data is newer or if we're initializing
+      if (data.sides !== undefined && data.value !== undefined && data.goal !== undefined) {
+        isSyncingFromDatabase = true;
+        // Update the UI with values from Firebase (these will be picked up by the main script)
+        window.firebaseData = data;
+        window.firebaseDataChanged = true;
+      }
+    }
+  }, (error) => {
+    console.error('Firebase listener error:', error);
+  });
 
 </script>
 
@@ -633,6 +671,7 @@
     if (value <= 1) { flashDie('red'); return; }
     value--;
     render();
+    window.saveToFirebase(sides, value, goal);
     flashDie(value === goal ? 'green' : 'gold');
   }
 
@@ -640,6 +679,7 @@
     if (value >= maxVal()) { flashDie('red'); return; }
     value++;
     render();
+    window.saveToFirebase(sides, value, goal);
     flashDie(value === goal ? 'green' : 'gold');
   }
 
@@ -649,6 +689,7 @@
     value = clampV(v);
     startInput.value = value;
     render();
+    window.saveToFirebase(sides, value, goal);
     flashDie(value === goal ? 'green' : 'gold');
   }
 
@@ -658,6 +699,7 @@
     goal = clampG(g);
     goalInput.value = goal;
     render();
+    window.saveToFirebase(sides, value, goal);
     flashDie(value === goal ? 'green' : 'gold');
   }
 
@@ -672,6 +714,7 @@
     );
     drawDie();
     render();
+    window.saveToFirebase(sides, value, goal);
     flashDie('gold');
   }
 
@@ -696,8 +739,49 @@
   });
 
   // ── Init ──
-  drawDie();
-  render();
+  // Check for existing Firebase data on page load
+  const initWithFirebaseData = async () => {
+    // Wait a moment for Firebase listener to initialize
+    setTimeout(() => {
+      if (window.firebaseData) {
+        const data = window.firebaseData;
+        sides = data.sides || 4;
+        value = clampV(data.value || 4);
+        goal = clampG(data.goal || 4);
+        startInput.value = value;
+        goalInput.value = goal;
+      }
+      drawDie();
+      render();
+    }, 300);
+  };
+
+  // Sync from Firebase in real-time (on every render check)
+  const originalRender = render;
+  window.render = function() {
+    if (window.firebaseDataChanged && !isSyncingFromDatabase) {
+      // Data came from Firebase, update local state
+      const data = window.firebaseData;
+      sides = data.sides || sides;
+      value = clampV(data.value || value);
+      goal = clampG(data.goal || goal);
+      startInput.value = value;
+      goalInput.value = goal;
+      window.firebaseDataChanged = false;
+    }
+    originalRender();
+  };
+  render = window.render;
+
+  initWithFirebaseData();
+  
+  // Set up polling to check for Firebase data changes every 100ms
+  setInterval(() => {
+    if (window.firebaseDataChanged && !isSyncingFromDatabase) {
+      render();
+    }
+  }, 100);
+
 </script>
 </body>
 </html>
